@@ -10,7 +10,7 @@ from mvits.utils.utils import print_arguments
 parser = argparse.ArgumentParser(description='vits inference')
 # 必须参数
 parser.add_argument('-c', '--config_path', type=str, default="models/config.yml", help='配置文件路径')
-parser.add_argument('-m', '--model_path', type=str, default="models/G_latest.pth", help='模型路径')
+parser.add_argument('-m', '--model_path', type=str, default="models/latest/g_net.pth", help='模型路径')
 parser.add_argument('-o', '--output_path', type=str, default="output/", help='输出文件路径')
 parser.add_argument('-l', '--language', type=str, default="简体中文", help='输入的语言')
 parser.add_argument('-t', '--text', type=str, default='你好，我是智能语音助手', help='输入文本')
