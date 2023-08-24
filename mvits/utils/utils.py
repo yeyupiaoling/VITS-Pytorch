@@ -11,7 +11,7 @@ logger = setup_logger(__name__)
 def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=False):
     assert os.path.isfile(checkpoint_path)
     checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
-    epoch = checkpoint_dict['epoch']
+    epoch = checkpoint_dict.get('epoch', 0)
     learning_rate = checkpoint_dict['learning_rate']
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint_dict['optimizer'])
@@ -44,7 +44,7 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
 
 # 保存模型
 def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path):
-    os.makedirs(checkpoint_path, exist_ok=True)
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     if hasattr(model, 'module'):
         state_dict = model.module.state_dict()
     else:

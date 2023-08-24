@@ -19,9 +19,9 @@ class MVITSPredictor:
             with open(config, 'r', encoding='utf-8') as f:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
+        self.speaker_ids = configs['speakers']
         self.configs = dict_to_object(configs)
         self.symbols = self.configs['symbols']
-        self.speaker_ids = self.configs.speakers
         # 获取模型
         self.net_g = SynthesizerTrn(len(self.symbols),
                                     self.configs.data.filter_length // 2 + 1,
@@ -30,7 +30,7 @@ class MVITSPredictor:
                                     **self.configs.model).to(self.device)
         self.net_g.eval()
         load_checkpoint(model_path, self.net_g, None)
-        self.language_marks = {"Japanese": "", "日本語": "[JA]", "简体中文": "[ZH]", "English": "[EN]", "Mix": ""}
+        self.language_marks = {"日本語": "[JA]", "简体中文": "[ZH]", "English": "[EN]", "한국어": "[KO]"}
         logger.info(f'支持说话人：{list(self.speaker_ids.keys())}')
 
     @staticmethod

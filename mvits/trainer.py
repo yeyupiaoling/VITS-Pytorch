@@ -1,4 +1,4 @@
-import json
+import os
 import os
 import shutil
 
@@ -15,7 +15,7 @@ from mvits.data_utils.collate_fn import TextAudioSpeakerCollate
 from mvits.data_utils.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
 from mvits.data_utils.reader import TextAudioSpeakerLoader
 from mvits.data_utils.sampler import DistributedBucketSampler
-from mvits.models import commons
+from mvits.models.commons import clip_grad_value_, slice_segments
 from mvits.models.losses import generator_loss, discriminator_loss, feature_loss, kl_loss
 from mvits.models.models import SynthesizerTrn, MultiPeriodDiscriminator
 from mvits.utils.logger import setup_logger
@@ -121,8 +121,6 @@ class VITSTrainer(object):
         self.scheduler_d = torch.optim.lr_scheduler.ExponentialLR(self.optim_d, gamma=self.configs.train.lr_decay)
         # 半精度训练
         self.amp_scaler = GradScaler(enabled=self.configs.train.fp16_run)
-        self.scheduler_g.step(latest_epoch)
-        self.scheduler_d.step(latest_epoch)
         return latest_epoch
 
     def train(self, epochs, resume_model=None, pretrained_model=None):
@@ -156,7 +154,7 @@ class VITSTrainer(object):
         for epoch_id in range(latest_epoch, epochs):
             epoch_id += 1
             # 训练一个epoch
-            self.__train_epoch(rank=rank, writer=writer, epoch=epoch_id)
+            self.__train_epoch(rank=rank, writer=writer, epoch=epoch_id, max_epochs=epochs)
             self.scheduler_g.step()
             self.scheduler_d.step()
             # 多卡训练只使用一个进程执行评估和保存模型
@@ -177,17 +175,18 @@ class VITSTrainer(object):
                         os.path.join(save_dir, "g_net.pth"))
         save_checkpoint(self.net_d, self.optim_d, self.configs.train.learning_rate, epoch_id,
                         os.path.join(save_dir, "d_net.pth"))
+        shutil.rmtree(latest_dir)
         shutil.copytree(save_dir, latest_dir)
         # 删除旧模型
         old_model_path = os.path.join(self.model_dir, f"epoch_{epoch_id - 3}")
         if os.path.exists(old_model_path):
-            os.remove(old_model_path)
+            shutil.rmtree(old_model_path)
 
-    def __train_epoch(self, rank, writer, epoch):
+    def __train_epoch(self, rank, writer, epoch, max_epochs):
         self.net_g.train()
         self.net_d.train()
         for batch_idx, (x, x_lengths, spec, spec_lengths, y, y_lengths, speakers) \
-                in enumerate(tqdm(self.train_loader, desc=f'epoch [{epoch}/{self.configs.train.epochs}]')):
+                in enumerate(tqdm(self.train_loader, desc=f'epoch [{epoch}/{max_epochs}]')):
             x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
             spec, spec_lengths = spec.cuda(rank, non_blocking=True), spec_lengths.cuda(rank, non_blocking=True)
             y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
@@ -203,7 +202,7 @@ class VITSTrainer(object):
                                         self.configs.data.sampling_rate,
                                         self.configs.data.mel_fmin,
                                         self.configs.data.mel_fmax)
-                y_mel = commons.slice_segments(mel, ids_slice, self.configs.train.segment_size // self.configs.data.hop_length)
+                y_mel = slice_segments(mel, ids_slice, self.configs.train.segment_size // self.configs.data.hop_length)
                 y_hat_mel = mel_spectrogram_torch(y_hat.squeeze(1),
                                                   self.configs.data.filter_length,
                                                   self.configs.data.n_mel_channels,
@@ -213,7 +212,7 @@ class VITSTrainer(object):
                                                   self.configs.data.mel_fmin,
                                                   self.configs.data.mel_fmax)
 
-                y = commons.slice_segments(y, ids_slice * self.configs.data.hop_length, self.configs.train.segment_size)
+                y = slice_segments(y, ids_slice * self.configs.data.hop_length, self.configs.train.segment_size)
 
                 # Discriminator
                 y_d_hat_r, y_d_hat_g, _, _ = self.net_d(y, y_hat.detach())
@@ -223,7 +222,7 @@ class VITSTrainer(object):
             self.optim_d.zero_grad()
             self.amp_scaler.scale(loss_disc_all).backward()
             self.amp_scaler.unscale_(self.optim_d)
-            commons.clip_grad_value_(self.net_d.parameters(), None)
+            clip_grad_value_(self.net_d.parameters(), None)
             self.amp_scaler.step(self.optim_d)
 
             with autocast(enabled=self.configs.train.fp16_run):
@@ -240,7 +239,7 @@ class VITSTrainer(object):
             self.optim_g.zero_grad()
             self.amp_scaler.scale(loss_gen_all).backward()
             self.amp_scaler.unscale_(self.optim_g)
-            grad_norm_g = commons.clip_grad_value_(self.net_g.parameters(), None)
+            grad_norm_g = clip_grad_value_(self.net_g.parameters(), None)
             self.amp_scaler.step(self.optim_g)
             self.amp_scaler.update()
 
