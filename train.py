@@ -1,21 +1,19 @@
 import argparse
 
 from mvits.trainer import VITSTrainer
-from mvits.utils.utils import str2bool
+from mvits.utils.utils import print_arguments
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-c', '--config', type=str, default="configs/config.json",
-                    help='JSON file for configuration')
-parser.add_argument('-m', '--model_dir', type=str, default="models", help='Model name')
-parser.add_argument('-n', '--epochs', type=int, default=50, help='finetune epochs')
-parser.add_argument('--drop_speaker_embed', type=str2bool, default=False,
-                    help='whether to drop existing characters')
-parser.add_argument('--resume_model', type=str, default=None,
-                    help='whether to train with resume model')
-parser.add_argument('--pretrained_model', type=str, default=None,
-                    help='whether to train with pretrained model')
+parser.add_argument('-c', '--config', type=str, default="configs/config.yml", help='配置文件路径')
+parser.add_argument('-m', '--model_dir', type=str, default="models", help='训练保存模型的路径')
+parser.add_argument('-e', '--epochs', type=int, default=50, help='训练轮数')
+parser.add_argument('-r', '--resume_model', type=str, default=None, help='恢复训练模型路径')
+parser.add_argument('-p', '--pretrained_model', type=str, default='pretrained_model', help='预训练模型路径')
 args = parser.parse_args()
+print_arguments(args=args)
 
+trainer = VITSTrainer(config=args.config, model_dir=args.model_dir)
 
-trainer = VITSTrainer(config_path=args.config, args=args)
-trainer.train(resume_model=args.resume_model, pretrained_model=args.pretrained_model)
+trainer.train(epochs=args.epochs,
+              resume_model=args.resume_model,
+              pretrained_model=args.pretrained_model)

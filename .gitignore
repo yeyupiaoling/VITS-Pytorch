@@ -1,5 +1,6 @@
 .idea/
-models/
+pretrained_model/
 output/
 dataset/
 log/
+test.py

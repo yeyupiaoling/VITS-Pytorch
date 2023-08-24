@@ -12,9 +12,24 @@ unzip sampled_audio4ft_v2.zip
 
 2. 下载预训练模型文件
 ```
-wget https://huggingface.co/spaces/Plachta/VITS-Umamusume-voice-synthesizer/resolve/main/pretrained_models/D_trilingual.pth -O ./models/D_0.pth
-wget https://huggingface.co/spaces/Plachta/VITS-Umamusume-voice-synthesizer/resolve/main/pretrained_models/G_trilingual.pth -O ./models/G_0.pth
-wget https://huggingface.co/spaces/Plachta/VITS-Umamusume-voice-synthesizer/resolve/main/configs/uma_trilingual.json -O ./configs/configs.json
+wget https://huggingface.co/spaces/Plachta/VITS-Umamusume-voice-synthesizer/resolve/main/pretrained_models/G_trilingual.pth -O ./pretrained_model/g_net.pth
+wget https://huggingface.co/spaces/Plachta/VITS-Umamusume-voice-synthesizer/resolve/main/pretrained_models/D_trilingual.pth -O ./pretrained_model/d_net.pth
+wget https://huggingface.co/spaces/Plachta/VITS-Umamusume-voice-synthesizer/resolve/main/configs/uma_trilingual.json -O ./pretrained_model/configs.json
+```
+
+然后执行下面代码转换格式
+```python
+import json
+
+import yaml
+
+with open('pretrained_model/config.json', "r") as f:
+    data = f.read()
+config = json.loads(data)
+
+with open('configs/config.yml', 'w', encoding='utf-8') as f:
+    yaml_datas = yaml.dump(config, indent=2, sort_keys=False, allow_unicode=True)
+    f.write(yaml_datas)
 ```
 
 3. 制作数据列表

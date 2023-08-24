@@ -1,14 +1,16 @@
 import argparse
-import json
 
+import yaml
 from tqdm import tqdm
 
 from mvits.text import clean_text_
+from mvits.utils.utils import print_arguments
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", default="configs/config.json", help='配置文件路径')
+parser.add_argument("--config", default="configs/config.yml", help='配置文件路径')
 parser.add_argument("--data_list", default="dataset/sampled_audio4ft.txt", help='数据列表路径')
 args = parser.parse_args()
+print_arguments(args=args)
 
 
 # 读取数据列表
@@ -24,25 +26,26 @@ for line in new_annos:
 assert (len(speakers) != 0), "No audio file found. Please check your uploaded file structure."
 # 读取原配置文件参数
 with open(args.config, 'r', encoding='utf-8') as f:
-    hps = json.load(f)
+    configs = yaml.load(f.read(), Loader=yaml.FullLoader)
 
 # 把说话人名称转换为ID
 speaker2id = {}
 for i, speaker in enumerate(speakers):
     speaker2id[speaker] = i
 # 更新配置参数
-hps['data']["n_speakers"] = len(speakers)
-hps['speakers'] = speaker2id
+configs['data']["n_speakers"] = len(speakers)
+configs['speakers'] = speaker2id
 # 写入到新的配置文件里面
-with open("configs/config.json", 'w', encoding='utf-8') as f:
-    json.dump(hps, f, indent=2)
+with open('configs/config.json', 'w', encoding='utf-8') as f:
+    yaml_datas = yaml.dump(configs, indent=2, sort_keys=False, allow_unicode=True)
+    f.write(yaml_datas)
 
 # 生成音素数据
 cleaned_new_annos = []
 for i, line in enumerate(tqdm(new_annos)):
     path, speaker, txt = line.split("|")
     if len(txt) > 150: continue
-    cleaned_text = clean_text_(txt, hps['data']['text_cleaners']).replace("[ZH]", "")
+    cleaned_text = clean_text_(txt, configs['data']['text_cleaners']).replace("[ZH]", "")
     cleaned_text += "\n" if not cleaned_text.endswith("\n") else ""
     cleaned_new_annos.append(path + "|" + str(speaker2id[speaker]) + "|" + cleaned_text)
 

@@ -1,26 +1,33 @@
 import torch
+import yaml
 from torch import no_grad, LongTensor
 
 from mvits.models import commons
 from mvits.models.models import SynthesizerTrn
 from mvits.text import text_to_sequence
 from mvits.utils.logger import setup_logger
-from mvits.utils.utils import load_checkpoint, get_hparams_from_file
+from mvits.utils.utils import load_checkpoint, print_arguments, dict_to_object
 
 logger = setup_logger(__name__)
 
 
 class MVITSPredictor:
-    def __init__(self, config_path, model_path, use_gpu=True):
+    def __init__(self, config, model_path, use_gpu=True):
         self.device = "cuda:0" if torch.cuda.is_available() and use_gpu else "cpu"
-        self.hps = get_hparams_from_file(config_path)
-        self.speaker_ids = self.hps.speakers
+        # 读取配置文件
+        if isinstance(config, str):
+            with open(config, 'r', encoding='utf-8') as f:
+                configs = yaml.load(f.read(), Loader=yaml.FullLoader)
+            print_arguments(configs=configs)
+        self.configs = dict_to_object(configs)
+        self.symbols = self.configs['symbols']
+        self.speaker_ids = self.configs.speakers
         # 获取模型
-        self.net_g = SynthesizerTrn(len(self.hps.symbols),
-                                    self.hps.data.filter_length // 2 + 1,
-                                    self.hps.train.segment_size // self.hps.data.hop_length,
-                                    n_speakers=self.hps.data.n_speakers,
-                                    **self.hps.model).to(self.device)
+        self.net_g = SynthesizerTrn(len(self.symbols),
+                                    self.configs.data.filter_length // 2 + 1,
+                                    self.configs.train.segment_size // self.configs.data.hop_length,
+                                    n_speakers=self.configs.data.n_speakers,
+                                    **self.configs.model).to(self.device)
         self.net_g.eval()
         load_checkpoint(model_path, self.net_g, None)
         self.language_marks = {"Japanese": "", "日本語": "[JA]", "简体中文": "[ZH]", "English": "[EN]", "Mix": ""}
@@ -40,7 +47,7 @@ class MVITSPredictor:
         # 输入到模型的文本
         text = self.language_marks[language] + text + self.language_marks[language]
         speaker_id = self.speaker_ids[spk]
-        stn_tst = self.get_text(text, self.hps, False)
+        stn_tst = self.get_text(text, self.configs, False)
         with no_grad():
             x_tst = stn_tst.unsqueeze(0).to(self.device)
             x_tst_lengths = LongTensor([stn_tst.size(0)]).to(self.device)
@@ -49,4 +56,4 @@ class MVITSPredictor:
                 self.net_g.infer(x_tst, x_tst_lengths, sid=sid, noise_scale=noise_scale, noise_scale_w=noise_scale_w,
                                  length_scale=1.0 / speed)[0][0, 0].data.cpu().float().numpy()
         del stn_tst, x_tst, x_tst_lengths, sid
-        return audio, self.hps.data.sampling_rate
+        return audio, self.configs.data.sampling_rate

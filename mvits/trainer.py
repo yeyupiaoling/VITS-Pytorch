@@ -1,8 +1,10 @@
 import json
 import os
+import shutil
 
 import torch
 import torch.distributed as dist
+import yaml
 from torch.cuda.amp import autocast, GradScaler
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -17,37 +19,36 @@ from mvits.models import commons
 from mvits.models.losses import generator_loss, discriminator_loss, feature_loss, kl_loss
 from mvits.models.models import SynthesizerTrn, MultiPeriodDiscriminator
 from mvits.utils.logger import setup_logger
-from mvits.utils.utils import load_checkpoint, save_checkpoint, plot_spectrogram_to_numpy, dict_to_object
+from mvits.utils.utils import load_checkpoint, save_checkpoint, plot_spectrogram_to_numpy, dict_to_object, \
+    print_arguments
 
 logger = setup_logger(__name__)
 
 
 class VITSTrainer(object):
-    def __init__(self, config_path, args):
+    def __init__(self, config, model_dir):
         assert torch.cuda.is_available(), "CPU training is not allowed."
-        os.makedirs(args.model_dir, exist_ok=True)
-        config_save_path = os.path.join(args.model_dir, "config.json")
-        with open(config_path, "r") as f:
-            data = f.read()
-        # 复制一份
-        with open(config_save_path, "w") as f:
-            f.write(data)
-        config = json.loads(data)
-
+        self.model_dir = model_dir
         # 读取配置文件
-        hparams = dict_to_object(config)
-        hparams.model_dir = args.model_dir
-        hparams.train.epochs = args.epochs
-        hparams.drop_speaker_embed = args.drop_speaker_embed
-        self.hps = hparams
-        self.symbols = self.hps['symbols']
+        if isinstance(config, str):
+            with open(config, 'r', encoding='utf-8') as f:
+                configs = yaml.load(f.read(), Loader=yaml.FullLoader)
+            print_arguments(configs=configs)
+        self.configs = dict_to_object(configs)
+        self.symbols = self.configs['symbols']
+        # 复制一份
+        os.makedirs(model_dir, exist_ok=True)
+        config_save_path = os.path.join(model_dir, "config.yml")
+        with open(config_save_path, "w", encoding='utf-8') as f:
+            yaml_datas = yaml.dump(config, indent=2, sort_keys=False, allow_unicode=True)
+            f.write(yaml_datas)
 
     def __setup_dataloader(self, rank, n_gpus):
-        train_dataset = TextAudioSpeakerLoader(self.hps.data.training_files, self.hps.data, self.symbols)
+        train_dataset = TextAudioSpeakerLoader(self.configs.data.training_files, self.configs.data, self.symbols)
         train_sampler = None
         if n_gpus > 1:
             train_sampler = DistributedBucketSampler(train_dataset,
-                                                     self.hps.train.batch_size,
+                                                     self.configs.train.batch_size,
                                                      [32, 300, 400, 500, 600, 700, 800, 900, 1000],
                                                      num_replicas=n_gpus,
                                                      rank=rank,
@@ -55,46 +56,54 @@ class VITSTrainer(object):
         collate_fn = TextAudioSpeakerCollate()
         self.train_loader = DataLoader(train_dataset, num_workers=0, shuffle=(train_sampler is None), pin_memory=True,
                                        collate_fn=collate_fn, batch_sampler=train_sampler,
-                                       batch_size=self.hps.train.batch_size)
+                                       batch_size=self.configs.train.batch_size)
         if rank == 0:
-            eval_dataset = TextAudioSpeakerLoader(self.hps.data.validation_files, self.hps.data, self.symbols)
+            eval_dataset = TextAudioSpeakerLoader(self.configs.data.validation_files, self.configs.data, self.symbols)
             self.eval_loader = DataLoader(eval_dataset, num_workers=0, shuffle=False,
-                                          batch_size=self.hps.train.batch_size, pin_memory=True,
+                                          batch_size=self.configs.train.batch_size, pin_memory=True,
                                           drop_last=False, collate_fn=collate_fn)
         logger.info('训练数据：{}'.format(len(train_dataset)))
 
     def __setup_model(self, rank, n_gpus, resume_model=None, pretrained_model=None):
         latest_epoch = 0
         self.net_g = SynthesizerTrn(len(self.symbols),
-                                    self.hps.data.filter_length // 2 + 1,
-                                    self.hps.train.segment_size // self.hps.data.hop_length,
-                                    n_speakers=self.hps.data.n_speakers,
-                                    **self.hps.model).cuda(rank)
-        self.net_d = MultiPeriodDiscriminator(self.hps.model.use_spectral_norm).cuda(rank)
-
+                                    self.configs.data.filter_length // 2 + 1,
+                                    self.configs.train.segment_size // self.configs.data.hop_length,
+                                    n_speakers=self.configs.data.n_speakers,
+                                    **self.configs.model).cuda(rank)
+        self.net_d = MultiPeriodDiscriminator(self.configs.model.use_spectral_norm).cuda(rank)
+        # 获取优化方法
+        self.optim_g = torch.optim.AdamW(self.net_g.parameters(),
+                                         self.configs.train.learning_rate,
+                                         betas=self.configs.train.betas,
+                                         eps=self.configs.train.eps)
+        self.optim_d = torch.optim.AdamW(self.net_d.parameters(),
+                                         self.configs.train.learning_rate,
+                                         betas=self.configs.train.betas,
+                                         eps=self.configs.train.eps)
         # 自动恢复训练
-        latest_g_checkpoint_path = os.path.join(self.hps.model_dir, "G_latest.pth")
-        latest_d_checkpoint_path = os.path.join(self.hps.model_dir, "D_latest.pth")
+        latest_g_checkpoint_path = os.path.join(self.model_dir, "latest", "g_net.pth")
+        latest_d_checkpoint_path = os.path.join(self.model_dir, "latest", "d_net.pth")
         if os.path.exists(latest_g_checkpoint_path):
-            _, _, _, latest_epoch = load_checkpoint(latest_g_checkpoint_path, self.net_g, None)
+            _, _, _, latest_epoch = load_checkpoint(latest_g_checkpoint_path, self.net_g, self.optim_g)
         if os.path.exists(latest_d_checkpoint_path):
-            _, _, _, latest_epoch = load_checkpoint(latest_d_checkpoint_path, self.net_d, None)
+            _, _, _, latest_epoch = load_checkpoint(latest_d_checkpoint_path, self.net_d, self.optim_d)
         # 加载预训练模型
         if pretrained_model:
-            pretrained_g_model_path = os.path.join(pretrained_model, "G_latest.pth")
-            pretrained_d_model_path = os.path.join(pretrained_model, "D_latest.pth")
+            pretrained_g_model_path = os.path.join(pretrained_model, "g_net.pth")
+            pretrained_d_model_path = os.path.join(pretrained_model, "d_net.pth")
             if os.path.exists(pretrained_g_model_path):
                 load_checkpoint(pretrained_g_model_path, self.net_g, None)
             if os.path.exists(pretrained_d_model_path):
                 load_checkpoint(pretrained_d_model_path, self.net_d, None)
         # 加载恢复训练模型
         if resume_model:
-            resume_g_model_path = os.path.join(resume_model, "G_latest.pth")
-            resume_d_model_path = os.path.join(resume_model, "D_latest.pth")
+            resume_g_model_path = os.path.join(resume_model, "g_net.pth")
+            resume_d_model_path = os.path.join(resume_model, "d_net.pth")
             if os.path.exists(resume_g_model_path):
-                load_checkpoint(resume_g_model_path, self.net_g, None)
+                _, _, _, latest_epoch = load_checkpoint(resume_g_model_path, self.net_g, self.optim_g)
             if os.path.exists(resume_d_model_path):
-                load_checkpoint(resume_d_model_path, self.net_d, None)
+                _, _, _, latest_epoch = load_checkpoint(resume_d_model_path, self.net_d, self.optim_d)
         # freeze all other layers except speaker embedding
         for p in self.net_g.parameters():
             p.requires_grad = True
@@ -103,26 +112,20 @@ class VITSTrainer(object):
         # for p in net_d.parameters():
         #     p.requires_grad = False
         # net_g.emb_g.weight.requires_grad = True
-        self.optim_g = torch.optim.AdamW(self.net_g.parameters(),
-                                         self.hps.train.learning_rate,
-                                         betas=self.hps.train.betas,
-                                         eps=self.hps.train.eps)
-        self.optim_d = torch.optim.AdamW(self.net_d.parameters(),
-                                         self.hps.train.learning_rate,
-                                         betas=self.hps.train.betas,
-                                         eps=self.hps.train.eps)
-        # 多卡
+        # 多卡训练
         if n_gpus > 1:
             self.net_g = torch.nn.parallel.DistributedDataParallel(self.net_g, device_ids=[rank])
             self.net_d = torch.nn.parallel.DistributedDataParallel(self.net_d, device_ids=[rank])
 
-        self.scheduler_g = torch.optim.lr_scheduler.ExponentialLR(self.optim_g, gamma=self.hps.train.lr_decay)
-        self.scheduler_d = torch.optim.lr_scheduler.ExponentialLR(self.optim_d, gamma=self.hps.train.lr_decay)
-
-        self.amp_scaler = GradScaler(enabled=self.hps.train.fp16_run)
+        self.scheduler_g = torch.optim.lr_scheduler.ExponentialLR(self.optim_g, gamma=self.configs.train.lr_decay)
+        self.scheduler_d = torch.optim.lr_scheduler.ExponentialLR(self.optim_d, gamma=self.configs.train.lr_decay)
+        # 半精度训练
+        self.amp_scaler = GradScaler(enabled=self.configs.train.fp16_run)
+        self.scheduler_g.step(latest_epoch)
+        self.scheduler_d.step(latest_epoch)
         return latest_epoch
 
-    def train(self, resume_model=None, pretrained_model=None):
+    def train(self, epochs, resume_model=None, pretrained_model=None):
         # 获取有多少张显卡训练
         n_gpus = torch.cuda.device_count()
         writer = None
@@ -133,7 +136,7 @@ class VITSTrainer(object):
             # Use gloo backend on Windows for Pytorch
             dist.init_process_group(backend='gloo' if os.name == 'nt' else 'nccl', init_method='env://',
                                     world_size=n_gpus, rank=rank)
-        torch.manual_seed(self.hps.train.seed)
+        torch.manual_seed(self.configs.train.seed)
         torch.cuda.set_device(rank)
         if rank == 0:
             # 日志记录器
@@ -150,7 +153,7 @@ class VITSTrainer(object):
             writer.add_scalar('Train/lr_g', self.scheduler_g.get_last_lr()[0], latest_epoch)
             writer.add_scalar('Train/lr_d', self.scheduler_d.get_last_lr()[0], latest_epoch)
         # 开始训练
-        for epoch_id in range(latest_epoch, self.hps.train.epochs):
+        for epoch_id in range(latest_epoch, epochs):
             epoch_id += 1
             # 训练一个epoch
             self.__train_epoch(rank=rank, writer=writer, epoch=epoch_id)
@@ -167,20 +170,16 @@ class VITSTrainer(object):
 
     # 保存模型
     def __save_model(self, epoch_id):
+        save_dir = os.path.join(self.model_dir, f"epoch_{epoch_id}")
+        latest_dir = os.path.join(self.model_dir, "latest")
         # 保存模型
-        save_checkpoint(self.net_g, self.optim_g, self.hps.train.learning_rate, epoch_id,
-                        os.path.join(self.hps.model_dir, "G_latest.pth"))
-        save_checkpoint(self.net_d, self.optim_d, self.hps.train.learning_rate, epoch_id,
-                        os.path.join(self.hps.model_dir, "D_latest.pth"))
-        save_checkpoint(self.net_g, self.optim_g, self.hps.train.learning_rate, epoch_id,
-                        os.path.join(self.hps.model_dir, f"G_{epoch_id}.pth"))
-        save_checkpoint(self.net_d, self.optim_d, self.hps.train.learning_rate, epoch_id,
-                        os.path.join(self.hps.model_dir, f"D_{epoch_id}.pth"))
+        save_checkpoint(self.net_g, self.optim_g, self.configs.train.learning_rate, epoch_id,
+                        os.path.join(save_dir, "g_net.pth"))
+        save_checkpoint(self.net_d, self.optim_d, self.configs.train.learning_rate, epoch_id,
+                        os.path.join(save_dir, "d_net.pth"))
+        shutil.copytree(save_dir, latest_dir)
         # 删除旧模型
-        old_model_path = os.path.join(self.hps.model_dir, f"G_{epoch_id - 3}.pth")
-        if os.path.exists(old_model_path):
-            os.remove(old_model_path)
-        old_model_path = os.path.join(self.hps.model_dir, f"D_{epoch_id - 3}.pth")
+        old_model_path = os.path.join(self.model_dir, f"epoch_{epoch_id - 3}")
         if os.path.exists(old_model_path):
             os.remove(old_model_path)
 
@@ -188,33 +187,33 @@ class VITSTrainer(object):
         self.net_g.train()
         self.net_d.train()
         for batch_idx, (x, x_lengths, spec, spec_lengths, y, y_lengths, speakers) \
-                in enumerate(tqdm(self.train_loader, desc=f'epoch [{epoch}/{self.hps.train.epochs}]')):
+                in enumerate(tqdm(self.train_loader, desc=f'epoch [{epoch}/{self.configs.train.epochs}]')):
             x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
             spec, spec_lengths = spec.cuda(rank, non_blocking=True), spec_lengths.cuda(rank, non_blocking=True)
             y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
             speakers = speakers.cuda(rank, non_blocking=True)
 
-            with autocast(enabled=self.hps.train.fp16_run):
+            with autocast(enabled=self.configs.train.fp16_run):
                 y_hat, l_length, attn, ids_slice, x_mask, z_mask, \
                     (z, z_p, m_p, logs_p, m_q, logs_q) = self.net_g(x, x_lengths, spec, spec_lengths, speakers)
 
                 mel = spec_to_mel_torch(spec,
-                                        self.hps.data.filter_length,
-                                        self.hps.data.n_mel_channels,
-                                        self.hps.data.sampling_rate,
-                                        self.hps.data.mel_fmin,
-                                        self.hps.data.mel_fmax)
-                y_mel = commons.slice_segments(mel, ids_slice, self.hps.train.segment_size // self.hps.data.hop_length)
+                                        self.configs.data.filter_length,
+                                        self.configs.data.n_mel_channels,
+                                        self.configs.data.sampling_rate,
+                                        self.configs.data.mel_fmin,
+                                        self.configs.data.mel_fmax)
+                y_mel = commons.slice_segments(mel, ids_slice, self.configs.train.segment_size // self.configs.data.hop_length)
                 y_hat_mel = mel_spectrogram_torch(y_hat.squeeze(1),
-                                                  self.hps.data.filter_length,
-                                                  self.hps.data.n_mel_channels,
-                                                  self.hps.data.sampling_rate,
-                                                  self.hps.data.hop_length,
-                                                  self.hps.data.win_length,
-                                                  self.hps.data.mel_fmin,
-                                                  self.hps.data.mel_fmax)
+                                                  self.configs.data.filter_length,
+                                                  self.configs.data.n_mel_channels,
+                                                  self.configs.data.sampling_rate,
+                                                  self.configs.data.hop_length,
+                                                  self.configs.data.win_length,
+                                                  self.configs.data.mel_fmin,
+                                                  self.configs.data.mel_fmax)
 
-                y = commons.slice_segments(y, ids_slice * self.hps.data.hop_length, self.hps.train.segment_size)
+                y = commons.slice_segments(y, ids_slice * self.configs.data.hop_length, self.configs.train.segment_size)
 
                 # Discriminator
                 y_d_hat_r, y_d_hat_g, _, _ = self.net_d(y, y_hat.detach())
@@ -227,13 +226,13 @@ class VITSTrainer(object):
             commons.clip_grad_value_(self.net_d.parameters(), None)
             self.amp_scaler.step(self.optim_d)
 
-            with autocast(enabled=self.hps.train.fp16_run):
+            with autocast(enabled=self.configs.train.fp16_run):
                 # Generator
                 y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = self.net_d(y, y_hat)
                 with autocast(enabled=False):
                     loss_dur = torch.sum(l_length.float())
-                    loss_mel = F.l1_loss(y_mel, y_hat_mel) * self.hps.train.c_mel
-                    loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * self.hps.train.c_kl
+                    loss_mel = F.l1_loss(y_mel, y_hat_mel) * self.configs.train.c_mel
+                    loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * self.configs.train.c_kl
 
                     loss_fm = feature_loss(fmap_r, fmap_g)
                     loss_gen, losses_gen = generator_loss(y_d_hat_g)
@@ -245,7 +244,7 @@ class VITSTrainer(object):
             self.amp_scaler.step(self.optim_g)
             self.amp_scaler.update()
 
-            if rank == 0 and batch_idx % self.hps.train.log_interval == 0:
+            if rank == 0 and batch_idx % self.configs.train.log_interval == 0:
                 lr = self.optim_g.param_groups[0]['lr']
                 scalar_dict = {"loss/g/total": loss_gen_all, "loss/d/total": loss_disc_all, "grad_norm_g": grad_norm_g}
                 scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/dur": loss_dur,
@@ -280,22 +279,22 @@ class VITSTrainer(object):
                 speakers = speakers[:1]
                 break
             y_hat, attn, mask, *_ = eval_generator.infer(x, x_lengths, speakers, max_len=1000)
-            y_hat_lengths = mask.sum([1, 2]).long() * self.hps.data.hop_length
+            y_hat_lengths = mask.sum([1, 2]).long() * self.configs.data.hop_length
 
             mel = spec_to_mel_torch(spec,
-                                    self.hps.data.filter_length,
-                                    self.hps.data.n_mel_channels,
-                                    self.hps.data.sampling_rate,
-                                    self.hps.data.mel_fmin,
-                                    self.hps.data.mel_fmax)
+                                    self.configs.data.filter_length,
+                                    self.configs.data.n_mel_channels,
+                                    self.configs.data.sampling_rate,
+                                    self.configs.data.mel_fmin,
+                                    self.configs.data.mel_fmax)
             y_hat_mel = mel_spectrogram_torch(y_hat.squeeze(1).float(),
-                                              self.hps.data.filter_length,
-                                              self.hps.data.n_mel_channels,
-                                              self.hps.data.sampling_rate,
-                                              self.hps.data.hop_length,
-                                              self.hps.data.win_length,
-                                              self.hps.data.mel_fmin,
-                                              self.hps.data.mel_fmax)
+                                              self.configs.data.filter_length,
+                                              self.configs.data.n_mel_channels,
+                                              self.configs.data.sampling_rate,
+                                              self.configs.data.hop_length,
+                                              self.configs.data.win_length,
+                                              self.configs.data.mel_fmin,
+                                              self.configs.data.mel_fmax)
         image_dict = {"gen/mel": plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy())}
         audio_dict = {"gen/audio": y_hat[0, :, :y_hat_lengths[0]]}
         image_dict.update({"gt/mel": plot_spectrogram_to_numpy(mel[0].cpu().numpy())})
@@ -304,6 +303,6 @@ class VITSTrainer(object):
         for k, v in image_dict.items():
             writer.add_image(k, v, epoch, dataformats='HWC')
         for k, v in audio_dict.items():
-            writer.add_audio(k, v, epoch, self.hps.data.sampling_rate)
+            writer.add_audio(k, v, epoch, self.configs.data.sampling_rate)
 
         generator.train()

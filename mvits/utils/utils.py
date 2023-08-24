@@ -1,4 +1,3 @@
-import argparse
 import json
 import os
 
@@ -43,7 +42,9 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
     return model, optimizer, learning_rate, epoch
 
 
+# 保存模型
 def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path):
+    os.makedirs(checkpoint_path, exist_ok=True)
     if hasattr(model, 'module'):
         state_dict = model.module.state_dict()
     else:
@@ -95,23 +96,27 @@ def plot_alignment_to_numpy(alignment, info=None):
     return data
 
 
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
-def get_hparams_from_file(config_path):
-    with open(config_path, "r", encoding="utf-8") as f:
-        data = f.read()
-    config = json.loads(data)
-    hparams = dict_to_object(config)
-    return hparams
+def print_arguments(args=None, configs=None):
+    if args:
+        logger.info("----------- 额外配置参数 -----------")
+        for arg, value in sorted(vars(args).items()):
+            logger.info("%s: %s" % (arg, value))
+        logger.info("------------------------------------------------")
+    if configs:
+        logger.info("----------- 配置文件参数 -----------")
+        for arg, value in sorted(configs.items()):
+            if isinstance(value, dict):
+                logger.info(f"{arg}:")
+                for a, v in sorted(value.items()):
+                    if isinstance(v, dict):
+                        logger.info(f"\t{a}:")
+                        for a1, v1 in sorted(v.items()):
+                            logger.info("\t\t%s: %s" % (a1, v1))
+                    else:
+                        logger.info("\t%s: %s" % (a, v))
+            else:
+                logger.info("%s: %s" % (arg, value))
+        logger.info("------------------------------------------------")
 
 
 class Dict(dict):
