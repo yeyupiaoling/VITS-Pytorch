@@ -22,7 +22,7 @@ parser.add_argument('-ls', '--speed', type=float, default=1, help='语速')
 args = parser.parse_args()
 print_arguments(args=args)
 
-predictor = MVITSPredictor(config=args.config_path, model_path=args.model_path)
+predictor = MVITSPredictor(configs=args.config_path, model_path=args.model_path)
 
 
 def main():

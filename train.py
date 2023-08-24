@@ -12,7 +12,7 @@ parser.add_argument('-p', '--pretrained_model', type=str, default='pretrained_mo
 args = parser.parse_args()
 print_arguments(args=args)
 
-trainer = VITSTrainer(config=args.config, model_dir=args.model_dir)
+trainer = VITSTrainer(configs=args.config, model_dir=args.model_dir)
 
 trainer.train(epochs=args.epochs,
               resume_model=args.resume_model,

@@ -12,11 +12,11 @@ logger = setup_logger(__name__)
 
 
 class MVITSPredictor:
-    def __init__(self, config, model_path, use_gpu=True):
+    def __init__(self, configs, model_path, use_gpu=True):
         self.device = "cuda:0" if torch.cuda.is_available() and use_gpu else "cpu"
         # 读取配置文件
-        if isinstance(config, str):
-            with open(config, 'r', encoding='utf-8') as f:
+        if isinstance(configs, str):
+            with open(configs, 'r', encoding='utf-8') as f:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
         self.speaker_ids = configs['speakers']
@@ -42,8 +42,8 @@ class MVITSPredictor:
         return text_norm
 
     def generate(self, text, spk, language, noise_scale=0.667, noise_scale_w=0.6, speed=1):
-        assert spk in self.speaker_ids.keys()
-        assert language in self.language_marks.keys()
+        assert spk in self.speaker_ids.keys(), f'不存在说话人：{spk}'
+        assert language in self.language_marks.keys(), f'不支持语言：{language}'
         # 输入到模型的文本
         text = self.language_marks[language] + text + self.language_marks[language]
         speaker_id = self.speaker_ids[spk]

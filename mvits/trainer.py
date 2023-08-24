@@ -26,12 +26,12 @@ logger = setup_logger(__name__)
 
 
 class VITSTrainer(object):
-    def __init__(self, config, model_dir):
+    def __init__(self, configs, model_dir):
         assert torch.cuda.is_available(), "CPU training is not allowed."
         self.model_dir = model_dir
         # 读取配置文件
-        if isinstance(config, str):
-            with open(config, 'r', encoding='utf-8') as f:
+        if isinstance(configs, str):
+            with open(configs, 'r', encoding='utf-8') as f:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
@@ -40,7 +40,7 @@ class VITSTrainer(object):
         os.makedirs(model_dir, exist_ok=True)
         config_save_path = os.path.join(model_dir, "config.yml")
         with open(config_save_path, "w", encoding='utf-8') as f:
-            yaml_datas = yaml.dump(config, indent=2, sort_keys=False, allow_unicode=True)
+            yaml_datas = yaml.dump(configs, indent=2, sort_keys=False, allow_unicode=True)
             f.write(yaml_datas)
 
     def __setup_dataloader(self, rank, n_gpus):
