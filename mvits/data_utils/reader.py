@@ -58,6 +58,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
     def get_audio(self, filename):
         audio_norm, sampling_rate = torchaudio.load(filename, frame_offset=0, num_frames=-1, normalize=True,
                                                     channels_first=True)
+        audio_norm = torchaudio.functional.resample(audio_norm, orig_freq=sampling_rate, new_freq=self.sampling_rate)
         spec = spectrogram_torch(audio_norm, self.filter_length,
                                  self.sampling_rate, self.hop_length, self.win_length,
                                  center=False)
