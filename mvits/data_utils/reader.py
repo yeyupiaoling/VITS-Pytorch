@@ -17,20 +17,20 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         3) computes spectrograms from audio files.
     """
 
-    def __init__(self, audio_paths_sid_text, hparams, symbols):
+    def __init__(self, audio_paths_sid_text, configs, symbols):
         self.audio_paths_sid_text = self.load_filepaths_and_text(audio_paths_sid_text)
-        self.text_cleaners = hparams.text_cleaners
-        self.max_wav_value = hparams.max_wav_value
-        self.sampling_rate = hparams.sampling_rate
-        self.filter_length = hparams.filter_length
-        self.hop_length = hparams.hop_length
-        self.win_length = hparams.win_length
+        self.text_cleaners = configs.text_cleaners
+        self.max_wav_value = configs.max_wav_value
+        self.sampling_rate = configs.sampling_rate
+        self.filter_length = configs.filter_length
+        self.hop_length = configs.hop_length
+        self.win_length = configs.win_length
 
-        self.cleaned_text = hparams.get("cleaned_text", False)
+        self.cleaned_text = configs.get("cleaned_text", False)
 
-        self.add_blank = hparams.add_blank
-        self.min_text_len = hparams.get("min_text_len", 1)
-        self.max_text_len = hparams.get("max_text_len", 190)
+        self.add_blank = configs.add_blank
+        self.min_text_len = configs.get("min_text_len", 1)
+        self.max_text_len = configs.get("max_text_len", 190)
         self.symbols = symbols
 
         random.seed(1234)
@@ -56,8 +56,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         return text, spec, wav, sid
 
     def get_audio(self, filename):
-        audio_norm, sampling_rate = torchaudio.load(filename, frame_offset=0, num_frames=-1, normalize=True,
-                                                    channels_first=True)
+        audio_norm, sampling_rate = torchaudio.load(filename)
         audio_norm = torchaudio.functional.resample(audio_norm, orig_freq=sampling_rate, new_freq=self.sampling_rate)
         spec = spectrogram_torch(audio_norm, self.filter_length,
                                  self.sampling_rate, self.hop_length, self.win_length,

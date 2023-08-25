@@ -1,5 +1,6 @@
 import os
 import os
+import platform
 import shutil
 
 import torch
@@ -42,6 +43,9 @@ class VITSTrainer(object):
         with open(config_save_path, "w", encoding='utf-8') as f:
             yaml_datas = yaml.dump(configs, indent=2, sort_keys=False, allow_unicode=True)
             f.write(yaml_datas)
+        if platform.system().lower() == 'windows':
+            self.configs.data.num_workers = 0
+            logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
 
     def __setup_dataloader(self, rank, n_gpus):
         train_dataset = TextAudioSpeakerLoader(self.configs.data.training_files, self.configs.data, self.symbols)
