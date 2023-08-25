@@ -54,12 +54,12 @@ class VITSTrainer(object):
                                                      rank=rank,
                                                      shuffle=True)
         collate_fn = TextAudioSpeakerCollate()
-        self.train_loader = DataLoader(train_dataset, num_workers=0, shuffle=(train_sampler is None), pin_memory=True,
-                                       collate_fn=collate_fn, batch_sampler=train_sampler,
-                                       batch_size=self.configs.train.batch_size)
+        self.train_loader = DataLoader(train_dataset, num_workers=self.configs.data.num_workers,
+                                       shuffle=(train_sampler is None), pin_memory=True, collate_fn=collate_fn,
+                                       batch_sampler=train_sampler, batch_size=self.configs.train.batch_size)
         if rank == 0:
             eval_dataset = TextAudioSpeakerLoader(self.configs.data.validation_files, self.configs.data, self.symbols)
-            self.eval_loader = DataLoader(eval_dataset, num_workers=0, shuffle=False,
+            self.eval_loader = DataLoader(eval_dataset, num_workers=self.configs.data.num_workers, shuffle=False,
                                           batch_size=self.configs.train.batch_size, pin_memory=True,
                                           drop_last=False, collate_fn=collate_fn)
         logger.info('训练数据：{}'.format(len(train_dataset)))
@@ -175,7 +175,8 @@ class VITSTrainer(object):
                         os.path.join(save_dir, "g_net.pth"))
         save_checkpoint(self.net_d, self.optim_d, self.configs.train.learning_rate, epoch_id,
                         os.path.join(save_dir, "d_net.pth"))
-        shutil.rmtree(latest_dir)
+        if os.path.exists(latest_dir):
+            shutil.rmtree(latest_dir)
         shutil.copytree(save_dir, latest_dir)
         # 删除旧模型
         old_model_path = os.path.join(self.model_dir, f"epoch_{epoch_id - 3}")

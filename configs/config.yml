@@ -19,6 +19,7 @@ train:
 data:
   training_files: dataset/train.txt
   validation_files: dataset/val.txt
+  num_workers: 4
   text_cleaners:
     - cjke_cleaners2
   max_wav_value: 32768.0
