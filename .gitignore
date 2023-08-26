@@ -4,4 +4,7 @@ output/
 models/
 dataset/
 log/
+build/
+dist/
+mvits.egg-info/
 test.py

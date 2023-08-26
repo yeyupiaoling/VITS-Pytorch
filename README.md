@@ -10,7 +10,7 @@
 
 # 前言
 
-本项目是基于Pytorch的语音合成项目，使用的是VITS，这种模型时端到端的，使用起来非常简单。
+本项目是基于Pytorch的语音合成项目，使用的是VITS，VITS（Variational Inference with adversarial learning for end-to-end Text-to-Speech）是一种语音合成方法，这种时端到端的模型使用起来非常简单，不需要文本对齐等太复杂的流程，直接一键训练和生成，大大降低了学习门槛。
 
 **欢迎大家扫码入知识星球或者QQ群讨论，知识星球里面提供项目的模型文件和博主其他相关项目的模型文件，也包括其他一些资源。**
 
