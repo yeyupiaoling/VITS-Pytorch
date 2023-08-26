@@ -50,12 +50,8 @@ def create_bznsyp(data_dir):
         for f in tqdm(os.listdir(path)):
             if not f.endswith('.wav'):continue
             audio_path = os.path.join(path, f).replace('\\', '/')
-            # sample, sr = soundfile.read(audio_path)
-            # duration = float(sample.shape[0] / sr)
-            # if duration < 2 or duration > 10: continue
             name = f[:-4]
             label = labels_dict[name].replace(' ', '')
-            # if len(label) < 10: continue
             text = f'{audio_path}|标准女声|[ZH]{label}[ZH]\n'
             fw.write(text)
     print(f'数据列表保存在：{list_path}')

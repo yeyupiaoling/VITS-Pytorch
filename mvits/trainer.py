@@ -26,7 +26,7 @@ from mvits.utils.utils import load_checkpoint, save_checkpoint, plot_spectrogram
 logger = setup_logger(__name__)
 
 
-class VITSTrainer(object):
+class MVITSTrainer(object):
     def __init__(self, configs, model_dir):
         assert torch.cuda.is_available(), "CPU training is not allowed."
         self.model_dir = model_dir
