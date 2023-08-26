@@ -14,7 +14,7 @@ parser.add_argument('-m', '--model_path', type=str, default="models/latest/g_net
 parser.add_argument('-o', '--output_path', type=str, default="output/", help='输出文件路径')
 parser.add_argument('-l', '--language', type=str, default="简体中文", help='输入的语言')
 parser.add_argument('-t', '--text', type=str, default='你好，我是智能语音助手', help='输入文本')
-parser.add_argument('-s', '--spk', type=str, default='zhongli', help='合成目标说话人名称')
+parser.add_argument('-s', '--spk', type=str, default='标准女声', help='合成目标说话人名称')
 # 可选参数
 parser.add_argument('-ns', '--noise_scale', type=float, default=.667, help='感情变化程度')
 parser.add_argument('-nsw', '--noise_scale_w', type=float, default=0.6, help='音素发音长度')

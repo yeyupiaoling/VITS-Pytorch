@@ -17,7 +17,8 @@ def create_aihell3_list(aishell2_dir, data_type='train'):
         labels_dict[name] = label
 
     path = os.path.join(aishell2_dir, data_type, 'wav')
-    with open(f"dataset/aishell3_{data_type}.txt", 'w', encoding='utf-8') as fw:
+    list_path = f"dataset/aishell3_{data_type}.txt"
+    with open(list_path, 'w', encoding='utf-8') as fw:
         for d in tqdm(os.listdir(path)):
             for name in os.listdir(os.path.join(path, d)):
                 audio_path = os.path.join(path, d, name).replace('\\', '/')
@@ -28,6 +29,7 @@ def create_aihell3_list(aishell2_dir, data_type='train'):
                 # if len(label) < 10: continue
                 text = f'{audio_path}|{d}|[ZH]{label}[ZH]\n'
                 fw.write(text)
+    print(f'数据列表保存在：{list_path}')
 
 
 def create_bznsyp(data_dir):
@@ -43,7 +45,8 @@ def create_bznsyp(data_dir):
         labels_dict[name] = label
 
     path = os.path.join(data_dir, 'Wave')
-    with open(f"dataset/bznsyp.txt", 'w', encoding='utf-8') as fw:
+    list_path = "dataset/bznsyp.txt"
+    with open(list_path, 'w', encoding='utf-8') as fw:
         for f in tqdm(os.listdir(path)):
             if not f.endswith('.wav'):continue
             audio_path = os.path.join(path, f).replace('\\', '/')
@@ -55,6 +58,7 @@ def create_bznsyp(data_dir):
             # if len(label) < 10: continue
             text = f'{audio_path}|标准女声|[ZH]{label}[ZH]\n'
             fw.write(text)
+    print(f'数据列表保存在：{list_path}')
 
 
 if __name__ == '__main__':
