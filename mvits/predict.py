@@ -23,9 +23,9 @@ class MVITSPredictor:
         self.symbols = self.configs['symbols']
         # 获取模型
         self.net_g = SynthesizerTrn(len(self.symbols),
-                                    self.configs.data.filter_length // 2 + 1,
-                                    self.configs.train.segment_size // self.configs.data.hop_length,
-                                    n_speakers=self.configs.data.n_speakers,
+                                    self.configs.dataset_conf.filter_length // 2 + 1,
+                                    self.configs.train_conf.segment_size // self.configs.dataset_conf.hop_length,
+                                    n_speakers=self.configs.dataset_conf.n_speakers,
                                     **self.configs.model).to(self.device)
         self.net_g.eval()
         load_checkpoint(model_path, self.net_g, None)
@@ -34,8 +34,8 @@ class MVITSPredictor:
 
     @staticmethod
     def get_text(text, hps, is_symbol):
-        text_norm = text_to_sequence(text, hps.symbols, [] if is_symbol else hps.data.text_cleaners)
-        if hps.data.add_blank:
+        text_norm = text_to_sequence(text, hps.symbols, [] if is_symbol else hps.dataset_conf.text_cleaners)
+        if hps.dataset_conf.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
         text_norm = torch.tensor(text_norm, dtype=torch.long)
         return text_norm
@@ -55,4 +55,4 @@ class MVITSPredictor:
                 self.net_g.infer(x_tst, x_tst_lengths, sid=sid, noise_scale=noise_scale, noise_scale_w=noise_scale_w,
                                  length_scale=1.0 / speed)[0][0, 0].data.cpu().float().numpy()
         del stn_tst, x_tst, x_tst_lengths, sid
-        return audio, self.configs.data.sampling_rate
+        return audio, self.configs.dataset_conf.sampling_rate

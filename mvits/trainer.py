@@ -1,5 +1,4 @@
 import os
-import os
 import platform
 import shutil
 
@@ -8,6 +7,7 @@ import torch.distributed as dist
 import yaml
 from torch.cuda.amp import autocast, GradScaler
 from torch.nn import functional as F
+from torch.optim.lr_scheduler import CosineAnnealingLR, ExponentialLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from visualdl import LogWriter
@@ -44,47 +44,64 @@ class MVITSTrainer(object):
             yaml_datas = yaml.dump(configs, indent=2, sort_keys=False, allow_unicode=True)
             f.write(yaml_datas)
         if platform.system().lower() == 'windows':
-            self.configs.data.num_workers = 0
+            self.configs.dataset_conf.num_workers = 0
             logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
 
     def __setup_dataloader(self, rank, n_gpus):
-        train_dataset = TextAudioSpeakerLoader(self.configs.data.training_files, self.configs.data, self.symbols)
+        train_dataset = TextAudioSpeakerLoader(self.configs.dataset_conf.training_files, self.configs.dataset_conf,
+                                               self.symbols)
         train_sampler = None
         if n_gpus > 1:
             train_sampler = DistributedBucketSampler(train_dataset,
-                                                     self.configs.train.batch_size,
+                                                     self.configs.dataset_conf.batch_size,
                                                      [32, 300, 400, 500, 600, 700, 800, 900, 1000],
                                                      num_replicas=n_gpus,
                                                      rank=rank,
                                                      shuffle=True)
         collate_fn = TextAudioSpeakerCollate()
-        self.train_loader = DataLoader(train_dataset, num_workers=self.configs.data.num_workers,
+        self.train_loader = DataLoader(train_dataset, num_workers=self.configs.dataset_conf.num_workers,
                                        shuffle=(train_sampler is None), pin_memory=True, collate_fn=collate_fn,
-                                       batch_sampler=train_sampler, batch_size=self.configs.train.batch_size)
+                                       batch_sampler=train_sampler, batch_size=self.configs.dataset_conf.batch_size)
         if rank == 0:
-            eval_dataset = TextAudioSpeakerLoader(self.configs.data.validation_files, self.configs.data, self.symbols)
-            self.eval_loader = DataLoader(eval_dataset, num_workers=self.configs.data.num_workers, shuffle=False,
-                                          batch_size=self.configs.train.batch_size, pin_memory=True,
+            eval_dataset = TextAudioSpeakerLoader(self.configs.dataset_conf.validation_files, self.configs.dataset_conf,
+                                                  self.symbols)
+            self.eval_loader = DataLoader(eval_dataset, num_workers=self.configs.dataset_conf.num_workers,
+                                          shuffle=False,
+                                          batch_size=self.configs.dataset_conf.batch_size, pin_memory=True,
                                           drop_last=False, collate_fn=collate_fn)
         logger.info('训练数据：{}'.format(len(train_dataset)))
 
-    def __setup_model(self, rank, n_gpus, resume_model=None, pretrained_model=None):
+    def __setup_model(self, rank, n_gpus, max_epochs, resume_model=None, pretrained_model=None):
         latest_epoch = 0
         self.net_g = SynthesizerTrn(len(self.symbols),
-                                    self.configs.data.filter_length // 2 + 1,
-                                    self.configs.train.segment_size // self.configs.data.hop_length,
-                                    n_speakers=self.configs.data.n_speakers,
+                                    self.configs.dataset_conf.filter_length // 2 + 1,
+                                    self.configs.train_conf.segment_size // self.configs.dataset_conf.hop_length,
+                                    n_speakers=self.configs.dataset_conf.n_speakers,
                                     **self.configs.model).cuda(rank)
         self.net_d = MultiPeriodDiscriminator(self.configs.model.use_spectral_norm).cuda(rank)
+
         # 获取优化方法
-        self.optim_g = torch.optim.AdamW(self.net_g.parameters(),
-                                         self.configs.train.learning_rate,
-                                         betas=self.configs.train.betas,
-                                         eps=self.configs.train.eps)
-        self.optim_d = torch.optim.AdamW(self.net_d.parameters(),
-                                         self.configs.train.learning_rate,
-                                         betas=self.configs.train.betas,
-                                         eps=self.configs.train.eps)
+        optimizer = self.configs.optimizer_conf.optimizer
+        if optimizer == 'Adam':
+            self.optim_g = torch.optim.Adam(self.net_g.parameters(),
+                                            self.configs.optimizer_conf.learning_rate,
+                                            betas=self.configs.optimizer_conf.betas,
+                                            eps=self.configs.optimizer_conf.eps)
+            self.optim_d = torch.optim.Adam(self.net_d.parameters(),
+                                            self.configs.optimizer_conf.learning_rate,
+                                            betas=self.configs.optimizer_conf.betas,
+                                            eps=self.configs.optimizer_conf.eps)
+        elif optimizer == 'AdamW':
+            self.optim_g = torch.optim.AdamW(self.net_g.parameters(),
+                                             self.configs.optimizer_conf.learning_rate,
+                                             betas=self.configs.optimizer_conf.betas,
+                                             eps=self.configs.optimizer_conf.eps)
+            self.optim_d = torch.optim.AdamW(self.net_d.parameters(),
+                                             self.configs.optimizer_conf.learning_rate,
+                                             betas=self.configs.optimizer_conf.betas,
+                                             eps=self.configs.optimizer_conf.eps)
+        else:
+            raise Exception(f'不支持优化方法：{optimizer}')
         # 自动恢复训练
         latest_g_checkpoint_path = os.path.join(self.model_dir, "latest", "g_net.pth")
         latest_d_checkpoint_path = os.path.join(self.model_dir, "latest", "d_net.pth")
@@ -121,10 +138,24 @@ class MVITSTrainer(object):
             self.net_g = torch.nn.parallel.DistributedDataParallel(self.net_g, device_ids=[rank])
             self.net_d = torch.nn.parallel.DistributedDataParallel(self.net_d, device_ids=[rank])
 
-        self.scheduler_g = torch.optim.lr_scheduler.ExponentialLR(self.optim_g, gamma=self.configs.train.lr_decay)
-        self.scheduler_d = torch.optim.lr_scheduler.ExponentialLR(self.optim_d, gamma=self.configs.train.lr_decay)
+        # 学习率衰减函数
+        scheduler_args = self.configs.optimizer_conf.get('scheduler_args', {}) \
+            if self.configs.optimizer_conf.get('scheduler_args', {}) is not None else {}
+        if self.configs.optimizer_conf.scheduler == 'CosineAnnealingLR':
+            max_step = int(max_epochs * 1.2) * len(self.train_loader)
+            self.scheduler_g = CosineAnnealingLR(optimizer=self.optim_g,
+                                                 T_max=max_step,
+                                                 **scheduler_args)
+            self.scheduler_d = CosineAnnealingLR(optimizer=self.optim_d,
+                                                 T_max=max_step,
+                                                 **scheduler_args)
+        elif self.configs.optimizer_conf.scheduler == 'ExponentialLR':
+            self.scheduler_g = ExponentialLR(self.optim_g, **scheduler_args)
+            self.scheduler_d = ExponentialLR(self.optim_d, **scheduler_args)
+        else:
+            raise Exception(f'不支持学习率衰减函数：{self.configs.optimizer_conf.scheduler}')
         # 半精度训练
-        self.amp_scaler = GradScaler(enabled=self.configs.train.fp16_run)
+        self.amp_scaler = GradScaler(enabled=self.configs.train_conf.enable_amp)
         return latest_epoch
 
     def train(self, epochs, resume_model=None, pretrained_model=None):
@@ -138,7 +169,7 @@ class MVITSTrainer(object):
             # Use gloo backend on Windows for Pytorch
             dist.init_process_group(backend='gloo' if os.name == 'nt' else 'nccl', init_method='env://',
                                     world_size=n_gpus, rank=rank)
-        torch.manual_seed(self.configs.train.seed)
+        torch.manual_seed(self.configs.train_conf.seed)
         torch.cuda.set_device(rank)
         if rank == 0:
             # 日志记录器
@@ -147,7 +178,7 @@ class MVITSTrainer(object):
         # 获取数据
         self.__setup_dataloader(rank=rank, n_gpus=n_gpus)
         # 获取模型
-        latest_epoch = self.__setup_model(rank=rank, n_gpus=n_gpus,
+        latest_epoch = self.__setup_model(rank=rank, n_gpus=n_gpus, max_epochs=epochs,
                                           resume_model=resume_model,
                                           pretrained_model=pretrained_model)
         self.train_step = 0
@@ -175,9 +206,9 @@ class MVITSTrainer(object):
         save_dir = os.path.join(self.model_dir, f"epoch_{epoch_id}")
         latest_dir = os.path.join(self.model_dir, "latest")
         # 保存模型
-        save_checkpoint(self.net_g, self.optim_g, self.configs.train.learning_rate, epoch_id,
+        save_checkpoint(self.net_g, self.optim_g, self.configs.optimizer_conf.learning_rate, epoch_id,
                         os.path.join(save_dir, "g_net.pth"))
-        save_checkpoint(self.net_d, self.optim_d, self.configs.train.learning_rate, epoch_id,
+        save_checkpoint(self.net_d, self.optim_d, self.configs.optimizer_conf.learning_rate, epoch_id,
                         os.path.join(save_dir, "d_net.pth"))
         if os.path.exists(latest_dir):
             shutil.rmtree(latest_dir)
@@ -197,27 +228,29 @@ class MVITSTrainer(object):
             y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
             speakers = speakers.cuda(rank, non_blocking=True)
 
-            with autocast(enabled=self.configs.train.fp16_run):
+            with autocast(enabled=self.configs.train_conf.enable_amp):
                 y_hat, l_length, attn, ids_slice, x_mask, z_mask, \
                     (z, z_p, m_p, logs_p, m_q, logs_q) = self.net_g(x, x_lengths, spec, spec_lengths, speakers)
 
                 mel = spec_to_mel_torch(spec,
-                                        self.configs.data.filter_length,
-                                        self.configs.data.n_mel_channels,
-                                        self.configs.data.sampling_rate,
-                                        self.configs.data.mel_fmin,
-                                        self.configs.data.mel_fmax)
-                y_mel = slice_segments(mel, ids_slice, self.configs.train.segment_size // self.configs.data.hop_length)
+                                        self.configs.dataset_conf.filter_length,
+                                        self.configs.dataset_conf.n_mel_channels,
+                                        self.configs.dataset_conf.sampling_rate,
+                                        self.configs.dataset_conf.mel_fmin,
+                                        self.configs.dataset_conf.mel_fmax)
+                y_mel = slice_segments(mel, ids_slice,
+                                       self.configs.train_conf.segment_size // self.configs.dataset_conf.hop_length)
                 y_hat_mel = mel_spectrogram_torch(y_hat.squeeze(1),
-                                                  self.configs.data.filter_length,
-                                                  self.configs.data.n_mel_channels,
-                                                  self.configs.data.sampling_rate,
-                                                  self.configs.data.hop_length,
-                                                  self.configs.data.win_length,
-                                                  self.configs.data.mel_fmin,
-                                                  self.configs.data.mel_fmax)
+                                                  self.configs.dataset_conf.filter_length,
+                                                  self.configs.dataset_conf.n_mel_channels,
+                                                  self.configs.dataset_conf.sampling_rate,
+                                                  self.configs.dataset_conf.hop_length,
+                                                  self.configs.dataset_conf.win_length,
+                                                  self.configs.dataset_conf.mel_fmin,
+                                                  self.configs.dataset_conf.mel_fmax)
 
-                y = slice_segments(y, ids_slice * self.configs.data.hop_length, self.configs.train.segment_size)
+                y = slice_segments(y, ids_slice * self.configs.dataset_conf.hop_length,
+                                   self.configs.train_conf.segment_size)
 
                 # Discriminator
                 y_d_hat_r, y_d_hat_g, _, _ = self.net_d(y, y_hat.detach())
@@ -230,13 +263,13 @@ class MVITSTrainer(object):
             clip_grad_value_(self.net_d.parameters(), None)
             self.amp_scaler.step(self.optim_d)
 
-            with autocast(enabled=self.configs.train.fp16_run):
+            with autocast(enabled=self.configs.train_conf.enable_amp):
                 # Generator
                 y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = self.net_d(y, y_hat)
                 with autocast(enabled=False):
                     loss_dur = torch.sum(l_length.float())
-                    loss_mel = F.l1_loss(y_mel, y_hat_mel) * self.configs.train.c_mel
-                    loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * self.configs.train.c_kl
+                    loss_mel = F.l1_loss(y_mel, y_hat_mel) * self.configs.train_conf.c_mel
+                    loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * self.configs.train_conf.c_kl
 
                     loss_fm = feature_loss(fmap_r, fmap_g)
                     loss_gen, losses_gen = generator_loss(y_d_hat_g)
@@ -248,7 +281,7 @@ class MVITSTrainer(object):
             self.amp_scaler.step(self.optim_g)
             self.amp_scaler.update()
 
-            if rank == 0 and batch_idx % self.configs.train.log_interval == 0:
+            if rank == 0 and batch_idx % self.configs.train_conf.log_interval == 0:
                 lr = self.optim_g.param_groups[0]['lr']
                 scalar_dict = {"loss/g/total": loss_gen_all, "loss/d/total": loss_disc_all, "grad_norm_g": grad_norm_g}
                 scalar_dict.update({"loss/g/fm": loss_fm, "loss/g/mel": loss_mel, "loss/g/dur": loss_dur,
@@ -283,22 +316,22 @@ class MVITSTrainer(object):
                 speakers = speakers[:1]
                 break
             y_hat, attn, mask, *_ = eval_generator.infer(x, x_lengths, speakers, max_len=1000)
-            y_hat_lengths = mask.sum([1, 2]).long() * self.configs.data.hop_length
+            y_hat_lengths = mask.sum([1, 2]).long() * self.configs.dataset_conf.hop_length
 
             mel = spec_to_mel_torch(spec,
-                                    self.configs.data.filter_length,
-                                    self.configs.data.n_mel_channels,
-                                    self.configs.data.sampling_rate,
-                                    self.configs.data.mel_fmin,
-                                    self.configs.data.mel_fmax)
+                                    self.configs.dataset_conf.filter_length,
+                                    self.configs.dataset_conf.n_mel_channels,
+                                    self.configs.dataset_conf.sampling_rate,
+                                    self.configs.dataset_conf.mel_fmin,
+                                    self.configs.dataset_conf.mel_fmax)
             y_hat_mel = mel_spectrogram_torch(y_hat.squeeze(1).float(),
-                                              self.configs.data.filter_length,
-                                              self.configs.data.n_mel_channels,
-                                              self.configs.data.sampling_rate,
-                                              self.configs.data.hop_length,
-                                              self.configs.data.win_length,
-                                              self.configs.data.mel_fmin,
-                                              self.configs.data.mel_fmax)
+                                              self.configs.dataset_conf.filter_length,
+                                              self.configs.dataset_conf.n_mel_channels,
+                                              self.configs.dataset_conf.sampling_rate,
+                                              self.configs.dataset_conf.hop_length,
+                                              self.configs.dataset_conf.win_length,
+                                              self.configs.dataset_conf.mel_fmin,
+                                              self.configs.dataset_conf.mel_fmax)
         image_dict = {"gen/mel": plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy())}
         audio_dict = {"gen/audio": y_hat[0, :, :y_hat_lengths[0]]}
         image_dict.update({"gt/mel": plot_spectrogram_to_numpy(mel[0].cpu().numpy())})
@@ -307,6 +340,6 @@ class MVITSTrainer(object):
         for k, v in image_dict.items():
             writer.add_image(k, v, epoch, dataformats='HWC')
         for k, v in audio_dict.items():
-            writer.add_audio(k, v, epoch, self.configs.data.sampling_rate)
+            writer.add_audio(k, v, epoch, self.configs.dataset_conf.sampling_rate)
 
         generator.train()
