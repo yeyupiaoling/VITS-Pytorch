@@ -68,20 +68,26 @@ def main():
     for i, speaker in enumerate(speakers):
         speaker2id[speaker] = i
     # 更新配置参数
-    configs['data']["n_speakers"] = len(speakers)
-    configs['speakers'] = speaker2id
+    is_change = False
+    if configs['dataset_conf']["n_speakers"] != len(speakers):
+        configs['dataset_conf']["n_speakers"] = len(speakers)
+        is_change = True
+    if configs['speakers'] != speaker2id:
+        configs['speakers'] = speaker2id
+        is_change = True
     # 写入到新的配置文件里面
-    with open('configs/config.yml', 'w', encoding='utf-8') as f:
-        yaml_datas = yaml.dump(configs, indent=2, sort_keys=False, allow_unicode=True)
-        f.write(yaml_datas)
+    if is_change:
+        with open('configs/config.yml', 'w', encoding='utf-8') as f:
+            yaml_datas = yaml.dump(configs, indent=2, sort_keys=False, allow_unicode=True)
+            f.write(yaml_datas)
 
     preprocess_data(data_anno=train_anno,
                     list_path='dataset/train.txt',
-                    text_cleaners=configs['data']['text_cleaners'],
+                    text_cleaners=configs['dataset_conf']['text_cleaners'],
                     speaker2id=speaker2id)
     preprocess_data(data_anno=val_anno,
                     list_path='dataset/val.txt',
-                    text_cleaners=configs['data']['text_cleaners'],
+                    text_cleaners=configs['dataset_conf']['text_cleaners'],
                     speaker2id=speaker2id)
     logger.info("数据处理完成！")
 
