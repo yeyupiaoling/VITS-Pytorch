@@ -8,6 +8,8 @@ dataset_conf:
   batch_size: 2
   # 读取数据的线程数量
   num_workers: 4
+  # 说话人数量
+  n_speakers: 1
   # 制作音素的方法
   text_cleaners:
     - cjke_cleaners2
@@ -20,7 +22,6 @@ dataset_conf:
   mel_fmin: 0.0
   mel_fmax: null
   add_blank: true
-  n_speakers: 1
   cleaned_text: true
 
 train_conf:
