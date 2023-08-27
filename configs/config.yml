@@ -7,7 +7,7 @@ train:
     - 0.8
     - 0.99
   eps: 1.0e-09
-  batch_size: 16
+  batch_size: 2
   fp16_run: false
   lr_decay: 0.999875
   segment_size: 8192

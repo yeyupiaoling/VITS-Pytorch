@@ -143,7 +143,7 @@ class WN(torch.nn.Module):
 
     def forward(self, x, x_mask, g=None, **kwargs):
         output = torch.zeros_like(x)
-        n_channels_tensor = torch.IntTensor([self.hidden_channels])
+        n_channels_tensor = torch.tensor([self.hidden_channels], dtype=torch.int32)
 
         if g is not None:
             g = self.cond_layer(g)

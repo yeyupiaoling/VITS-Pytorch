@@ -37,7 +37,7 @@ class MVITSPredictor:
         text_norm = text_to_sequence(text, hps.symbols, [] if is_symbol else hps.data.text_cleaners)
         if hps.data.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
-        text_norm = torch.LongTensor(text_norm)
+        text_norm = torch.tensor(text_norm, dtype=torch.long)
         return text_norm
 
     def generate(self, text, spk, language, noise_scale=0.667, noise_scale_w=0.6, speed=1):
@@ -49,8 +49,8 @@ class MVITSPredictor:
         stn_tst = self.get_text(text, self.configs, False)
         with torch.no_grad():
             x_tst = stn_tst.unsqueeze(0).to(self.device)
-            x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).to(self.device)
-            sid = torch.LongTensor([speaker_id]).to(self.device)
+            x_tst_lengths = torch.tensor([stn_tst.size(0)], dtype=torch.long).to(self.device)
+            sid = torch.tensor([speaker_id], dtype=torch.long).to(self.device)
             audio = \
                 self.net_g.infer(x_tst, x_tst_lengths, sid=sid, noise_scale=noise_scale, noise_scale_w=noise_scale_w,
                                  length_scale=1.0 / speed)[0][0, 0].data.cpu().float().numpy()

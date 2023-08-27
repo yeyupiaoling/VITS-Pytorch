@@ -17,21 +17,21 @@ class TextAudioSpeakerCollate(object):
         """
         # Right zero-pad all one-hot text sequences to max input length
         _, ids_sorted_decreasing = torch.sort(
-            torch.LongTensor([x[1].size(1) for x in batch]),
+            torch.tensor([x[1].size(1) for x in batch], dtype=torch.long),
             dim=0, descending=True)
 
         max_text_len = max([len(x[0]) for x in batch])
         max_spec_len = max([x[1].size(1) for x in batch])
         max_wav_len = max([x[2].size(1) for x in batch])
 
-        text_lengths = torch.LongTensor(len(batch))
-        spec_lengths = torch.LongTensor(len(batch))
-        wav_lengths = torch.LongTensor(len(batch))
-        sid = torch.LongTensor(len(batch))
+        text_lengths = torch.zeros(len(batch), dtype=torch.long)
+        spec_lengths = torch.zeros(len(batch), dtype=torch.long)
+        wav_lengths = torch.zeros(len(batch), dtype=torch.long)
+        sid = torch.zeros(len(batch), dtype=torch.long)
 
-        text_padded = torch.LongTensor(len(batch), max_text_len)
-        spec_padded = torch.FloatTensor(len(batch), batch[0][1].size(0), max_spec_len)
-        wav_padded = torch.FloatTensor(len(batch), 1, max_wav_len)
+        text_padded = torch.zeros([len(batch), max_text_len], dtype=torch.long)
+        spec_padded = torch.zeros([len(batch), batch[0][1].size(0), max_spec_len], dtype=torch.float32)
+        wav_padded = torch.zeros([len(batch), 1, max_wav_len], dtype=torch.float32)
         text_padded.zero_()
         spec_padded.zero_()
         wav_padded.zero_()

@@ -71,12 +71,12 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             text_norm = text_to_sequence(text, self.symbols, self.text_cleaners)
         if self.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
-        text_norm = torch.LongTensor(text_norm)
+        text_norm = torch.tensor(text_norm, dtype=torch.long)
         return text_norm
 
     @staticmethod
     def get_sid(sid):
-        sid = torch.LongTensor([int(sid)])
+        sid = torch.tensor([int(sid)], dtype=torch.long)
         return sid
 
     def __getitem__(self, index):
