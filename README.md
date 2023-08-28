@@ -59,7 +59,9 @@ python setup.py install
 
 ## 准备数据
 
-项目支持直接生成[BZNSYP](https://aistudio.baidu.com/datasetdetail/36741)和[AiShell3](https://aistudio.baidu.com/datasetdetail/207703)数据列表，以BZNSYP为例，将BZNSYP下载到`dataset`目录下，并解压。然后执行`create_list.py`程序就会生成以下格式的数据表，格式为`<音频路径>|<说话人名称>|<标注数据>`，注意标注数据需要标注语言，例如简体中文，就要用`[ZH]`将文本包裹起来，其他语言分别支持日本語:`[JA]`, English:[EN], 한국어:[KO]。自定义数据集按照这个格式生成就行。
+项目支持直接生成[BZNSYP](https://aistudio.baidu.com/datasetdetail/36741)和[AiShell3](https://aistudio.baidu.com/datasetdetail/207703)数据列表，以BZNSYP为例，将BZNSYP下载到`dataset`目录下，并解压。然后执行`create_list.py`程序就会生成以下格式的数据表，格式为`<音频路径>|<说话人名称>|<标注数据>`，注意标注数据需要标注语言，例如普通话，就要用`[ZH]`将文本包裹起来，其他语言分别支持日本語:`[JA]`, English:[EN], 한국어:[KO]。自定义数据集按照这个格式生成就行。
+
+项目提供两种文本处理方式，不同的文本处理方式，支持不同的语言，分别是`cjke_cleaners2`和`chinese_dialect_cleaners`，这个配置在`dataset_conf.text_cleaner`上修改。`cjke_cleaners2`支持语言`{"普通话": "[ZH]", "日本語": "[JA]", "English": "[EN]", "한국어": "[KO]"}`，`chinese_dialect_cleaners`支持语言`{"普通话": "[ZH]", "日本語": "[JA]", "English": "[EN]", "粤语": "[GD]", "上海话": "[SH]", "苏州话": "[SZ]", "无锡话": "[WX]", "常州话": "[CZ]", "杭州话": "[HZ]", ·····}`，更多的语言可以查看源码[LANGUAGE_MARKS](./mvits/__init__.py)。
 ```
 dataset/BZNSYP/Wave/000001.wav|标准女声|[ZH]卡尔普陪外孙玩滑梯。[ZH]
 dataset/BZNSYP/Wave/000002.wav|标准女声|[ZH]假语村言别再拥抱我。[ZH]
@@ -147,7 +149,7 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nnodes=1 --nproc_per_node=2 tra
 [2023-08-28 17:04:42.729561 INFO   ] utils:print_arguments:138 -        seed: 1234
 [2023-08-28 17:04:42.729592 INFO   ] utils:print_arguments:138 -        segment_size: 8192
 [2023-08-28 17:04:42.729622 INFO   ] utils:print_arguments:141 - ------------------------------------------------
-[2023-08-28 17:04:42.729971 INFO   ] trainer:__init__:53 - 目前[cjke_cleaners2]只支持语言：['日本語', '普通话', 'English', '한국어']
+[2023-08-28 17:04:42.729971 INFO   ] trainer:__init__:53 - [cjke_cleaners2]支持语言：['日本語', '普通话', 'English', '한국어', "Mix": ""]
 [2023-08-28 17:04:42.795955 INFO   ] trainer:__setup_dataloader:119 - 训练数据：9984
 epoch [1/10000]: 100%|██████████| 619/619 [05:30<00:00,  1.88it/s]]
 [2023-08-25 16:44:25.205557 INFO   ] trainer:train:168 - ======================================================================
