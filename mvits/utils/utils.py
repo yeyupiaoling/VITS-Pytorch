@@ -1,8 +1,10 @@
-import json
 import os
 
 import torch
+from tqdm import tqdm
 
+from mvits import __version__
+from mvits.text import clean_text_
 from mvits.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -12,6 +14,7 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
     assert os.path.isfile(checkpoint_path)
     checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
     epoch = checkpoint_dict.get('epoch', 0)
+    version = checkpoint_dict.get('version', 0)
     learning_rate = checkpoint_dict['learning_rate']
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint_dict['optimizer'])
@@ -38,12 +41,12 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
         model.module.load_state_dict(new_state_dict)
     else:
         model.load_state_dict(new_state_dict)
-    logger.info("Loaded checkpoint '{}' (epoch {})".format(checkpoint_path, epoch))
+    logger.info(f"Loaded checkpoint '{checkpoint_path}' (epoch {epoch}, version {version})")
     return model, optimizer, learning_rate, epoch
 
 
 # 保存模型
-def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path):
+def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path, speakers=None):
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     if hasattr(model, 'module'):
         state_dict = model.module.state_dict()
@@ -52,7 +55,26 @@ def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path):
     torch.save({'model': state_dict,
                 'epoch': epoch,
                 'optimizer': optimizer.state_dict() if optimizer is not None else None,
+                'speakers': speakers,
+                'version': __version__,
                 'learning_rate': learning_rate}, checkpoint_path)
+
+
+# 处理文本数据
+def preprocess(data_anno, list_path, text_cleaner, speaker2id):
+    # 生成音素数据
+    cleaned_new_annos = []
+    for i, line in enumerate(tqdm(data_anno)):
+        path, speaker, txt = line.split("|")
+        if len(txt) > 150: continue
+        cleaned_text = clean_text_(txt, text_cleaner)
+        cleaned_text += "\n" if not cleaned_text.endswith("\n") else ""
+        cleaned_new_annos.append(path + "|" + str(speaker2id[speaker]) + "|" + cleaned_text)
+
+    # 写入到训练和测试列表中
+    with open(list_path, 'w', encoding='utf-8') as f:
+        for i, line in enumerate(cleaned_new_annos):
+            f.write(line)
 
 
 def plot_spectrogram_to_numpy(spectrogram):

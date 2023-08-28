@@ -21,6 +21,7 @@ if __name__ == "__main__":
     setup(
         name='mvits',
         packages=find_packages(),
+        package_data={'': ['text/chinese_dialect_lexicons/*']},
         author='yeyupiaoling',
         version=VERSION,
         install_requires=parse_requirements(),

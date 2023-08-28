@@ -1,9 +1,10 @@
 import torch
 import yaml
 
-from mvits.models import commons
+from mvits import LANGUAGE_MARKS
+from mvits.models.commons import intersperse
 from mvits.models.models import SynthesizerTrn
-from mvits.text import text_to_sequence
+from mvits.text import text_to_sequence, get_symbols
 from mvits.utils.logger import setup_logger
 from mvits.utils.utils import load_checkpoint, print_arguments, dict_to_object
 
@@ -18,25 +19,29 @@ class MVITSPredictor:
             with open(configs, 'r', encoding='utf-8') as f:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
-        self.speaker_ids = configs['speakers']
         self.configs = dict_to_object(configs)
-        self.symbols = self.configs['symbols']
+        self.symbols = get_symbols(self.configs.dataset_conf.text_cleaner)
+        checkpoint_dict = torch.load(model_path, map_location='cpu')
+        self.speaker_ids = checkpoint_dict['speakers']
         # 获取模型
         self.net_g = SynthesizerTrn(len(self.symbols),
                                     self.configs.dataset_conf.filter_length // 2 + 1,
                                     self.configs.train_conf.segment_size // self.configs.dataset_conf.hop_length,
-                                    n_speakers=self.configs.dataset_conf.n_speakers,
+                                    n_speakers=len(self.speaker_ids),
                                     **self.configs.model).to(self.device)
         self.net_g.eval()
         load_checkpoint(model_path, self.net_g, None)
-        self.language_marks = {"日本語": "[JA]", "简体中文": "[ZH]", "English": "[EN]", "한국어": "[KO]"}
+        # 获取支持语言
+        if self.configs.dataset_conf.text_cleaner in LANGUAGE_MARKS.keys():
+            self.language_marks = LANGUAGE_MARKS[self.configs.dataset_conf.text_cleaner]
+        else:
+            raise Exception(f"不支持方法：{self.configs.dataset_conf.text_cleaner}")
         logger.info(f'支持说话人：{list(self.speaker_ids.keys())}')
 
-    @staticmethod
-    def get_text(text, hps, is_symbol):
-        text_norm = text_to_sequence(text, hps.symbols, [] if is_symbol else hps.dataset_conf.text_cleaners)
-        if hps.dataset_conf.add_blank:
-            text_norm = commons.intersperse(text_norm, 0)
+    def get_text(self, text, config, is_symbol):
+        text_norm = text_to_sequence(text, self.symbols, [] if is_symbol else config.dataset_conf.text_cleaner)
+        if config.dataset_conf.add_blank:
+            text_norm = intersperse(text_norm, 0)
         text_norm = torch.tensor(text_norm, dtype=torch.long)
         return text_norm
 

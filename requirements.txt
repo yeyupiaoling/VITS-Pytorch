@@ -19,6 +19,7 @@ monotonic-align
 cn2an
 eng_to_ipa
 ko_pron
+phonemizer
 indic_transliteration
 num_thai
 opencc

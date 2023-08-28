@@ -19,7 +19,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
 
     def __init__(self, audio_paths_sid_text, configs, symbols):
         self.audio_paths_sid_text = self.load_filepaths_and_text(audio_paths_sid_text)
-        self.text_cleaners = configs.text_cleaners
+        self.text_cleaner = configs.text_cleaner
         self.max_wav_value = configs.max_wav_value
         self.sampling_rate = configs.sampling_rate
         self.filter_length = configs.filter_length
@@ -68,7 +68,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         if self.cleaned_text:
             text_norm = cleaned_text_to_sequence(text, self.symbols)
         else:
-            text_norm = text_to_sequence(text, self.symbols, self.text_cleaners)
+            text_norm = text_to_sequence(text, self.symbols, self.text_cleaner)
         if self.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
         text_norm = torch.tensor(text_norm, dtype=torch.long)

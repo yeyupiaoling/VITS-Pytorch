@@ -1,9 +1,12 @@
+import os
 import re
 
+from mvits.text.mandarin import symbols_to_chinese
 import cn2an
 import opencc
 
-converter = opencc.OpenCC('jyutjyu')
+ABS_PATH = os.path.dirname(os.path.realpath(__file__))
+cantonese_converter = opencc.OpenCC(os.path.join(ABS_PATH, 'chinese_dialect_lexicons', 'jyutjyu_2'))
 
 # List of (Latin alphabet, ipa) pairs:
 _latin_to_ipa = [(re.compile('%s' % x[0]), x[1]) for x in [
@@ -47,8 +50,9 @@ def latin_to_ipa(text):
 
 
 def cantonese_to_ipa(text):
+    text = symbols_to_chinese(text)
     text = number_to_cantonese(text.upper())
-    text = converter.convert(text).replace('-', '').replace('$', ' ')
+    text = cantonese_converter.convert(text).replace('-', '').replace('$', ' ')
     text = re.sub(r'[A-Z]', lambda x: latin_to_ipa(x.group()) + ' ', text)
     text = re.sub(r'[、；：]', '，', text)
     text = re.sub(r'\s*，\s*', ', ', text)

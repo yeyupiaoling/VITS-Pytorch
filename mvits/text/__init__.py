@@ -1,29 +1,28 @@
-""" from https://github.com/keithito/tacotron """
 from mvits.text import cleaners
-from mvits.text.symbols import symbols
-
-# Mappings from symbol to numeric ID and vice versa:
-_symbol_to_id = {s: i for i, s in enumerate(symbols)}
-_id_to_symbol = {i: s for i, s in enumerate(symbols)}
+from mvits.text.symbol import get_symbols
 
 
-def text_to_sequence(text, symbols, cleaner_names):
+def text_to_sequence(text, symbols, cleaner_name):
     """Converts a string of text to a sequence of IDs corresponding to the symbols in the text.
       Args:
         text: string to convert to a sequence
-        cleaner_names: names of the cleaner functions to run the text through
+        cleaner_name: name of the cleaner functions to run the text through
+        symbols: a list of phoneme characters
       Returns:
         List of integers corresponding to the symbols in the text
     """
     sequence = []
     symbol_to_id = {s: i for i, s in enumerate(symbols)}
-    clean_text = clean_text_(text, cleaner_names)
+    cleaner = getattr(cleaners, cleaner_name)
+    if not cleaner:
+        raise Exception('Unknown cleaner: %s' % cleaner_name)
+    clean_text = cleaner(text)
     print(clean_text)
     print(f" length:{len(clean_text)}")
-    for symbol in clean_text:
-        if symbol not in symbol_to_id.keys():
+    for s in clean_text:
+        if s not in symbol_to_id.keys():
             continue
-        symbol_id = symbol_to_id[symbol]
+        symbol_id = symbol_to_id[s]
         sequence += [symbol_id]
     print(f" length:{len(sequence)}")
     return sequence
@@ -33,27 +32,18 @@ def cleaned_text_to_sequence(cleaned_text, symbols):
     """Converts a string of text to a sequence of IDs corresponding to the symbols in the text.
       Args:
         cleaned_text: string to convert to a sequence
+        symbols: a list of phoneme characters
       Returns:
         List of integers corresponding to the symbols in the text
     """
     symbol_to_id = {s: i for i, s in enumerate(symbols)}
-    sequence = [symbol_to_id[symbol] for symbol in cleaned_text if symbol in symbol_to_id.keys()]
+    sequence = [symbol_to_id[s] for s in cleaned_text if s in symbol_to_id.keys()]
     return sequence
 
 
-def sequence_to_text(sequence):
-    """Converts a sequence of IDs back to a string"""
-    result = ''
-    for symbol_id in sequence:
-        s = _id_to_symbol[symbol_id]
-        result += s
-    return result
-
-
-def clean_text_(text, cleaner_names):
-    for name in cleaner_names:
-        cleaner = getattr(cleaners, name)
-        if not cleaner:
-            raise Exception('Unknown cleaner: %s' % name)
-        text = cleaner(text)
+def clean_text_(text, cleaner_name):
+    cleaner = getattr(cleaners, cleaner_name)
+    if not cleaner:
+        raise Exception('Unknown cleaner: %s' % cleaner_name)
+    text = cleaner(text)
     return text

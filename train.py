@@ -12,8 +12,8 @@ parser.add_argument('-p', '--pretrained_model', type=str, default=None, help='é¢
 args = parser.parse_args()
 print_arguments(args=args)
 
-trainer = MVITSTrainer(configs=args.config, model_dir=args.model_dir)
+trainer = MVITSTrainer(configs=args.config)
 
-trainer.train(epochs=args.epochs,
+trainer.train(epochs=args.epochs, model_dir=args.model_dir,
               resume_model=args.resume_model,
               pretrained_model=args.pretrained_model)
