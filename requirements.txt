@@ -15,8 +15,8 @@ librosa>=0.10.1
 matplotlib==3.3.1
 soundfile>=0.12.1
 pyyaml>=5.4.1
+cn2an>=0.5.22
 monotonic-align
-cn2an
 eng_to_ipa
 ko_pron
 phonemizer
