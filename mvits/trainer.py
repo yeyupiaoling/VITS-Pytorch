@@ -108,7 +108,8 @@ class MVITSTrainer(object):
         collate_fn = TextAudioSpeakerCollate()
         self.train_loader = DataLoader(train_dataset, num_workers=self.configs.dataset_conf.num_workers,
                                        shuffle=(train_sampler is None), pin_memory=True, collate_fn=collate_fn,
-                                       batch_sampler=train_sampler, batch_size=self.configs.dataset_conf.batch_size)
+                                       batch_size=self.configs.dataset_conf.batch_size if train_sampler is None else 1,
+                                       batch_sampler=train_sampler)
         if rank == 0:
             eval_dataset = TextAudioSpeakerLoader(self.configs.dataset_conf.validation_file, self.configs.dataset_conf,
                                                   self.symbols)
@@ -207,6 +208,12 @@ class MVITSTrainer(object):
         latest_epoch = self.__setup_model(rank=rank, n_gpus=n_gpus, max_epochs=epochs,
                                           model_dir=model_dir, resume_model=resume_model,
                                           pretrained_model=pretrained_model)
+        # 恢复学习率
+        if latest_epoch > 0:
+            self.optim_g.step()
+            self.optim_d.step()
+            [self.scheduler_g.step() for _ in range(latest_epoch)]
+            [self.scheduler_d.step() for _ in range(latest_epoch)]
         if rank == 0:
             writer.add_scalar('Train/lr_g', self.scheduler_g.get_last_lr()[0], latest_epoch)
             writer.add_scalar('Train/lr_d', self.scheduler_d.get_last_lr()[0], latest_epoch)
