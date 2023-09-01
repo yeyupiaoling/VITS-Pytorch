@@ -10,7 +10,7 @@ from mvits.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=False):
+def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=False, is_pretrained=False):
     assert os.path.isfile(checkpoint_path)
     checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
     epoch = checkpoint_dict.get('epoch', 0)
@@ -26,10 +26,10 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
     new_state_dict = {}
     for k, v in state_dict.items():
         try:
-            if k == 'emb_g.weight':
+            if k == 'emb_g.weight' or k == 'enc_p.emb.weight':
                 if drop_speaker_emb:
-                    new_state_dict[k] = v
                     continue
+                new_state_dict[k] = v
                 v[:saved_state_dict[k].shape[0], :] = saved_state_dict[k]
                 new_state_dict[k] = v
             else:
@@ -38,9 +38,9 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
             logger.info("%s is not in the checkpoint" % k)
             new_state_dict[k] = v
     if hasattr(model, 'module'):
-        model.module.load_state_dict(new_state_dict)
+        model.module.load_state_dict(new_state_dict, strict=not is_pretrained)
     else:
-        model.load_state_dict(new_state_dict)
+        model.load_state_dict(new_state_dict, strict=not is_pretrained)
     logger.info(f"Loaded checkpoint '{checkpoint_path}' (epoch {epoch}, version {version})")
     return model, optimizer, learning_rate, epoch
 

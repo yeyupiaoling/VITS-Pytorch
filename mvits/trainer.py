@@ -249,9 +249,9 @@ class MVITSTrainer(object):
             pretrained_g_model_path = os.path.join(pretrained_model, "g_net.pth")
             pretrained_d_model_path = os.path.join(pretrained_model, "d_net.pth")
             if os.path.exists(pretrained_g_model_path):
-                load_checkpoint(pretrained_g_model_path, self.net_g, None)
+                load_checkpoint(pretrained_g_model_path, self.net_g, None, drop_speaker_emb=True, is_pretrained=True)
             if os.path.exists(pretrained_d_model_path):
-                load_checkpoint(pretrained_d_model_path, self.net_d, None)
+                load_checkpoint(pretrained_d_model_path, self.net_d, None, drop_speaker_emb=True, is_pretrained=True)
         # 加载恢复训练模型
         if resume_model:
             resume_g_model_path = os.path.join(resume_model, "g_net.pth")
