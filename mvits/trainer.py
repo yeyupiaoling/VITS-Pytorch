@@ -208,6 +208,7 @@ class MVITSTrainer(object):
         latest_epoch = self.__setup_model(rank=rank, n_gpus=n_gpus, max_epochs=epochs,
                                           model_dir=model_dir, resume_model=resume_model,
                                           pretrained_model=pretrained_model)
+        self.__save_model(epoch_id=latest_epoch, model_dir=model_dir)
         # 恢复学习率
         if latest_epoch > 0:
             self.optim_g.step()
@@ -267,9 +268,11 @@ class MVITSTrainer(object):
         latest_dir = os.path.join(model_dir, "latest")
         # 保存模型
         save_checkpoint(self.net_g, self.optim_g, self.configs.optimizer_conf.learning_rate, epoch_id,
-                        os.path.join(save_dir, "g_net.pth"), speakers=self.speakers)
+                        os.path.join(save_dir, "g_net.pth"), speakers=self.speakers,
+                        text_cleaner=self.configs.dataset_conf.text_cleaner)
         save_checkpoint(self.net_d, self.optim_d, self.configs.optimizer_conf.learning_rate, epoch_id,
-                        os.path.join(save_dir, "d_net.pth"), speakers=self.speakers)
+                        os.path.join(save_dir, "d_net.pth"), speakers=self.speakers,
+                        text_cleaner=self.configs.dataset_conf.text_cleaner)
         if os.path.exists(latest_dir):
             shutil.rmtree(latest_dir)
         shutil.copytree(save_dir, latest_dir)

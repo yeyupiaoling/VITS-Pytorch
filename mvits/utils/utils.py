@@ -46,18 +46,16 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=Fal
 
 
 # 保存模型
-def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path, speakers=None):
+def save_checkpoint(model, optimizer, learning_rate, epoch, checkpoint_path, speakers, text_cleaner):
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     if hasattr(model, 'module'):
         state_dict = model.module.state_dict()
     else:
         state_dict = model.state_dict()
-    torch.save({'model': state_dict,
-                'epoch': epoch,
-                'optimizer': optimizer.state_dict() if optimizer is not None else None,
-                'speakers': speakers,
-                'version': __version__,
+    torch.save({'model': state_dict, 'optimizer': optimizer.state_dict() if optimizer is not None else None,
+                'epoch': epoch, 'text_cleaner': text_cleaner, 'speakers': speakers, 'version': __version__,
                 'learning_rate': learning_rate}, checkpoint_path)
+    logger.info(f"Save checkpoint '{checkpoint_path}' (epoch {epoch})")
 
 
 # 处理文本数据

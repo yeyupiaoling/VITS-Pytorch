@@ -20,9 +20,10 @@ class MVITSPredictor:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
-        self.symbols = get_symbols(self.configs.dataset_conf.text_cleaner)
         checkpoint_dict = torch.load(model_path, map_location='cpu')
         self.speaker_ids = checkpoint_dict['speakers']
+        self.text_cleaner = checkpoint_dict['text_cleaner']
+        self.symbols = get_symbols(self.text_cleaner)
         # 获取模型
         self.net_g = SynthesizerTrn(len(self.symbols),
                                     self.configs.dataset_conf.filter_length // 2 + 1,
@@ -32,14 +33,14 @@ class MVITSPredictor:
         self.net_g.eval()
         load_checkpoint(model_path, self.net_g, None)
         # 获取支持语言
-        if self.configs.dataset_conf.text_cleaner in LANGUAGE_MARKS.keys():
-            self.language_marks = LANGUAGE_MARKS[self.configs.dataset_conf.text_cleaner]
+        if self.text_cleaner in LANGUAGE_MARKS.keys():
+            self.language_marks = LANGUAGE_MARKS[self.text_cleaner]
         else:
-            raise Exception(f"不支持方法：{self.configs.dataset_conf.text_cleaner}")
+            raise Exception(f"不支持方法：{self.text_cleaner}")
         logger.info(f'支持说话人：{list(self.speaker_ids.keys())}')
 
     def get_text(self, text, config, is_symbol):
-        text_norm = text_to_sequence(text, self.symbols, [] if is_symbol else config.dataset_conf.text_cleaner)
+        text_norm = text_to_sequence(text, self.symbols, [] if is_symbol else self.text_cleaner)
         if config.dataset_conf.add_blank:
             text_norm = intersperse(text_norm, 0)
         text_norm = torch.tensor(text_norm, dtype=torch.long)

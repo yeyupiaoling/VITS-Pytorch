@@ -17,14 +17,12 @@ def text_to_sequence(text, symbols, cleaner_name):
     if not cleaner:
         raise Exception('Unknown cleaner: %s' % cleaner_name)
     clean_text = cleaner(text)
-    print(clean_text)
-    print(f" length:{len(clean_text)}")
     for s in clean_text:
         if s not in symbol_to_id.keys():
             continue
         symbol_id = symbol_to_id[s]
         sequence += [symbol_id]
-    print(f" length:{len(sequence)}")
+    print(f'音素长度:{len(clean_text)}，音素为：{clean_text}')
     return sequence
 
 

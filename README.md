@@ -55,7 +55,7 @@ python -m pip install mvits -U -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```shell
 git clone https://github.com/yeyupiaoling/VITS-Pytorch.git
 cd VITS-Pytorch/
-python setup.py install
+pip install .
 ```
 
 ## 准备数据
