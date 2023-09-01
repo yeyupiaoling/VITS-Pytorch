@@ -37,6 +37,7 @@ class MVITSPredictor:
             self.language_marks = LANGUAGE_MARKS[self.text_cleaner]
         else:
             raise Exception(f"不支持方法：{self.text_cleaner}")
+        logger.info(f'使用文本处理方式为：{self.text_cleaner}')
         logger.info(f'支持说话人：{list(self.speaker_ids.keys())}')
 
     def get_text(self, text, config, is_symbol):
