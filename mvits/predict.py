@@ -1,14 +1,12 @@
 import torch
 import yaml
 
+from loguru import logger
 from mvits import LANGUAGE_MARKS
 from mvits.models.commons import intersperse
 from mvits.models.models import SynthesizerTrn
 from mvits.text import text_to_sequence, get_symbols
-from mvits.utils.logger import setup_logger
 from mvits.utils.utils import load_checkpoint, print_arguments, dict_to_object
-
-logger = setup_logger(__name__)
 
 
 class MVITSPredictor:

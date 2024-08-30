@@ -3,11 +3,9 @@ import os
 import torch
 from tqdm import tqdm
 
+from loguru import logger
 from mvits import __version__
 from mvits.text import clean_text_
-from mvits.utils.logger import setup_logger
-
-logger = setup_logger(__name__)
 
 
 def load_checkpoint(checkpoint_path, model, optimizer=None, drop_speaker_emb=False, is_pretrained=False):

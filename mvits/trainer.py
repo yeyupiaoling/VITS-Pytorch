@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from visualdl import LogWriter
 
+from loguru import logger
 from mvits import LANGUAGE_MARKS
 from mvits.data_utils.collate_fn import TextAudioSpeakerCollate
 from mvits.data_utils.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
@@ -23,11 +24,8 @@ from mvits.models.commons import clip_grad_value_, slice_segments
 from mvits.models.losses import generator_loss, discriminator_loss, feature_loss, kl_loss
 from mvits.models.models import SynthesizerTrn, MultiPeriodDiscriminator
 from mvits.text import get_symbols
-from mvits.utils.logger import setup_logger
 from mvits.utils.utils import load_checkpoint, save_checkpoint, plot_spectrogram_to_numpy, dict_to_object, \
     print_arguments, preprocess
-
-logger = setup_logger(__name__)
 
 
 class MVITSTrainer(object):
